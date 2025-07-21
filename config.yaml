@@ -1,51 +1,40 @@
 data:
-  container: ???
+  container: "precomputed://gs://dkronauer-ant-001-alignment-final/aligned"
   dataset: "s0"
-  voxel_size: [8, 8, 8]
+  voxel_size: [8, 8, 42]
+  channels: 1
 
 gt:
-  base: ??? # TODO specify the feather file containing all the ground truth
-  train: ??? # TODO specify the place to save the ground truth training set
-  val: ??? # TODO specify the place to save the ground truth validation set
-  num_transmitters: ??? # TODO specify the number of neurotransmitters
-  body_id: "body" # TODO specify the column name for the body id
-  nt_name: "nt_name" # TODO specify the column name for the neurotransmitter name
-  point_id: "point_id" # TODO specify the column name for the point id
-
-model:
-  spatial_dims: 3
-  in_channels: 1
-  output_classes: ???  # This is a placeholder for the number of output classes
+  neurotransmitter: 
+    - acetylcholine
+    - dopamine
+    - gaba
+    - glutamate
+    - octopamine
+    - peptide
+    - tyramine
+  base: /lustre/fs4/kron_lab/scratch/llopes/neurotransmitters/gt.feather
+  train: /lustre/fs4/kron_lab/scratch/llopes/neurotransmitters/train_data.feather
+  val: /lustre/fs4/kron_lab/scratch/llopes/neurotransmitters/val_data.feather
+  body_id: "neuron_id" 
+  nt_name: "neurotransmitter"
 
 train:
-  experiment_dir: ??? # TODO specify the path to save the run results, will also be used to store checkpoints etc.
+  experiment_dir: "/lustre/fs4/kron_lab/scratch/llopes/neurotransmitters/"
   input_shape: # TODO specify the input shape of the model
-    - ???
-    - ???
-    - ???
+    - 80
+    - 80
+    - 16
   log_every: 100
   num_iterations: 100000
-  batch_size: 8
+  batch_size: 16
   save_every: 10000
   snapshot_every: 10000
   learning_rate: 0.0001
   num_cache_workers: 12
-  container: ${data.container}
-  dataset: ${data.dataset}
-  voxel_size: ${data.voxel_size}
-  num_transmitters: ${gt.num_transmittters}
 
 validate: 
-  batch_size: ???
-  container: ${data.container}
-  dataset: ${data.dataset}
-  num_transmitters: ${gt.num_transmitters}
-  experiment_dir: ${train.experiment_dir}
-  checkpoint_number: ???
-  input_shape: ${train.input_shape}
-  num_workers: 12
-  nt_name: ${gt.nt_name}
-  point_id: ${gt.point_id}
+  batch_size: 32
   num_partitions: 10
   partition_id: 1
-  output_dir: ??? # TODO specify the path to save the validation results, optional
+  output_dir: "/lustre/fs4/kron_lab/scratch/llopes/neurotransmitters/validation" 
