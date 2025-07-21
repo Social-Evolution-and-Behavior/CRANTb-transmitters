@@ -1,6 +1,40 @@
 import cloudvolume
 import pandas as pd
 from torch.utils.data import Dataset
+from monai.transforms import (
+    Compose,
+    EnsureChannelFirst,
+    ScaleIntensity,
+    RandRotate90,
+    RandAxisFlip,
+    RandScaleIntensityFixedMean,
+    RandShiftIntensity,
+)
+
+
+def train_transform():
+    transform = Compose(
+        [
+            EnsureChannelFirst(channel_dim=-1),
+            ScaleIntensity(minv=-1, maxv=1),
+            # Augmentations
+            RandAxisFlip(prob=0.5),
+            RandRotate90(prob=0.5, spatial_axes=(0, 1)),
+            RandScaleIntensityFixedMean(prob=0.5, factors=0.2),
+            RandShiftIntensity(prob=0.5, offsets=0.2),
+        ]
+    )
+    return transform
+
+
+def test_transform():
+    transform = Compose(
+        [
+            EnsureChannelFirst(channel_dim=-1),
+            ScaleIntensity(minv=-1, maxv=1),
+        ]
+    )
+    return transform
 
 
 class CloudVolumeDataset(Dataset):
@@ -14,18 +48,27 @@ class CloudVolumeDataset(Dataset):
         metadata_path,
         classes=None,
         crop_size=(64, 64, 64),
-        use_https=True,
-        cache=True,
-        progress=False,
+        transform=None,
+        **kwargs,
     ):
         super().__init__()
-        self.cloud_volume = cloudvolume.CloudVolume(
-            cloud_volume_path, use_https=use_https, cache=cache, progress=progress
-        )
         self.locations, self.classes, self.class_names = self._read_metadata(
             metadata_path, classes
         )
         self.crop_size = crop_size  # Size around each location to crop
+        self.transform = transform
+        # Setup for the cloud volume
+        self.cloud_volume_path = cloud_volume_path
+        self._cloud_volume = None
+        self._cloud_volume_kwargs = kwargs
+
+    @property
+    def cloud_volume(self):
+        if self._cloud_volume is None:
+            self._cloud_volume = cloudvolume.CloudVolume(
+                self.cloud_volume_path, **self._cloud_volume_kwargs
+            )
+        return self._cloud_volume
 
     def _read_metadata(self, metadata_path, classes=None):
         """
@@ -66,5 +109,8 @@ class CloudVolumeDataset(Dataset):
         cropped_volume = self.cloud_volume[
             start[0] : end[0], start[1] : end[1], start[2] : end[2]
         ]
+
+        if self.transform:
+            cropped_volume = self.transform(cropped_volume)
 
         return cropped_volume, self.classes[idx]

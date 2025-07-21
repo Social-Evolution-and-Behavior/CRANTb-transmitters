@@ -1,4 +1,4 @@
-from crantb.data import CloudVolumeDataset
+from crantb.data import CloudVolumeDataset, train_transform, test_transform
 from crantb.split import split_data
 from monai.networks.nets import ResNet
 import logging
@@ -6,6 +6,7 @@ from pathlib import Path
 from omegaconf import OmegaConf
 import torch
 import typer
+import time
 
 
 # The CLI
@@ -26,11 +27,14 @@ def load_dataset(cfg: OmegaConf, split="train") -> CloudVolumeDataset:
 
     Uses the `data` part of the configuration file.
     """
+    transform = train_transform() if split == "train" else test_transform()
     return CloudVolumeDataset(
         cloud_volume_path=cfg.data.container,
         metadata_path=cfg.gt[split],
         classes=cfg.gt.neurotransmitters,
         crop_size=cfg.train.input_shape,
+        transform=transform,
+        parallel=8,
         use_https=cfg.data.use_https,
         cache=cfg.data.cache,
         progress=cfg.data.progress,
@@ -77,10 +81,29 @@ def split(cfg: str = "config.yaml"):
 
 
 @app.command()
-def train(cfg: str):
+def train(cfg: str = "config.yaml"):
+    """
+    Train the model based on the configuration.
+    """
     config = load_config(cfg)
-    print("Training with configuration:", config)
     # Here you would implement the training logic using the config
+    dataset = load_dataset(config, split="train")
+    logging.info(f"Loaded training dataset with {len(dataset)} samples.")
+    # Shape of the input data
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=config.train.batch_size,
+        shuffle=True,
+        num_workers=0,
+    )
+    # Get an example batch
+    t0 = time.time()
+    for batch in dataloader:
+        x, y = batch
+        logging.info(f"Input shape: {x.shape}, Label shape: {y.shape}")
+        logging.info(f"Time taken to load a batch: {time.time() - t0:.2f} seconds")
+        t0 = time.time()
+        break
 
 
 def test(cfg: str):
