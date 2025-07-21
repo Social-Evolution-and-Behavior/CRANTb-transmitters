@@ -1,3 +1,6 @@
+# python bytecode
+*.pyc
+__pycache__
 
 # pixi environments
 .pixi
@@ -5,3 +8,8 @@
 
 # vscode
 .vscode
+
+# testing data
+test_experiment
+test_config.yaml
+scratch.py

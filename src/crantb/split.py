@@ -2,18 +2,16 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import logging
 from omegaconf import DictConfig
-from typing import Optional
 import yaml
 
 
 def split_data(
     base: str = "",
-    val_size: float = 0.2,
+    val_size: float = 0.05,
     random_state: int = 42,
-    train: str = None,
-    val: str = None,
     body_id: str = "neuron_id",
     nt_name: str = "neurotransmitter",
+    neurotransmitters: list = None,
 ):
     """
     Split the ground truth data into training and validation sets, stratified by neurotransmitter type.
@@ -26,25 +24,22 @@ def split_data(
         Proportion of the data to include in the validation set.
     random_state : int
         Random seed for reproducibility.
-    train: str
-        Location to save the training set. Will be saved as a feather file.
-    val: str
-        Location to save the validation set. Will be saved as a feather file.
     body_id: str
         Name of the column containing the body IDs.
     nt_name: str
         Name of the column containing the neurotransmitter names.
     """
     gt = pd.read_feather(base)
+    # Only keep the relevant neurotransmitters if specified
+    if neurotransmitters is not None:
+        gt = gt[gt[nt_name].isin(neurotransmitters)].copy()
     # Make sure that the required columns are present
     assert all([col in gt.columns for col in [body_id, nt_name]])
     # Print some basic information
     logging.info(f"Total number of synapses: {len(gt)}")
-    logging.info(gt.nt_name.value_counts())
+    logging.info(gt[nt_name].value_counts())
     # Get the body IDs
     body_ids = gt[[body_id, nt_name]].sort_values(body_id).drop_duplicates()
-    # Check if any body id has more than one neurotransmitter
-    assert body_ids.body.value_counts().max() == 1
 
     # Splitting the body IDs into training and validation sets, stratified by neurotransmitter type
     train_body, val_body = train_test_split(
@@ -54,7 +49,20 @@ def split_data(
         random_state=random_state,
     )
     # Ensure that there is no overlap between the training and validation sets
-    assert len(set(train_body[body_id]) & set(val_body[body_id])) == 0
+    # Only allow an overlap can only exist if the body IDs have multiple neurotransmitters
+    overlap = set(train_body[body_id]) & set(val_body[body_id])
+    try:
+        assert overlap == set()
+    except AssertionError as e:
+        # Drop the overlapping body IDs from both sets
+        logging.warning(f"Overlapping body IDs found: {overlap}")
+        train_body = train_body[~train_body[body_id].isin(overlap)]
+        val_body = val_body[~val_body[body_id].isin(overlap)]
+        logging.warning(
+            f"Overlapping body IDs removed. New training set size: {len(train_body)}"
+        )
+        logging.warning(f"New validation set size: {len(val_body)}")
+
     # Split the ground truth data into training and validation sets
     train_gt = gt[gt[body_id].isin(train_body[body_id])]
     val_gt = gt[gt[body_id].isin(val_body[body_id])]
@@ -62,39 +70,9 @@ def split_data(
     for df in [train_gt, val_gt]:
         # Convert the neurotransmitter names to integers
         df["neurotransmitter"] = df[nt_name].astype("category").cat.codes
-
-    # Save
-    if train is not None:
-        logging.info(f"Saving the training set to {train}")
-        train_gt.to_feather(train)
-    if val is not None:
-        logging.info(f"Saving the validation set to {val}")
-        val_gt.to_feather(val)
+    # print some basic information about the split
+    logging.info(f"Training set size: {len(train_gt)}")
+    logging.info(train_gt[nt_name].value_counts())
+    logging.info(f"Validation set size: {len(val_gt)}")
+    logging.info(val_gt[nt_name].value_counts())
     return train_gt, val_gt
-
-
-def main(cfg: str = "config.yaml"):
-    with open(cfg, "r") as f:
-        cfg = DictConfig(yaml.safe_load(f))
-    # The information for this script is in cfg.gt
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-    # Split the data
-    train_gt, val_gt = split_data(**cfg.gt)
-    # Some basic information as output
-    # Get counts for training set
-    print("Training set:", len(train_gt))
-    print(train_gt.nt_name.value_counts())
-    print("Training set, normalized")
-    print(train_gt.nt_name.value_counts() / len(train_gt))
-    # Get counts for validation set
-    print("Validation set:", len(val_gt))
-    print(val_gt.nt_name.value_counts())
-    print("Validation set, normalized")
-    print(val_gt.nt_name.value_counts() / len(val_gt))
-
-
-if __name__ == "__main__":
-    main()

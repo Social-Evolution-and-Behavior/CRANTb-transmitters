@@ -1,0 +1,32 @@
+[project]
+authors = [{name = "Diane Adjavon", email = "diane.adjavon@icloud.com"}]
+description = "Neurotransmitter prediction for CRANTb data."
+name = "CRANTb-transmitters"
+requires-python = ">= 3.11"
+version = "0.1.0"
+dependencies = ["typer>=0.16.0,<0.17"]
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["osx-arm64"]
+
+[tool.pixi.pypi-dependencies]
+crantb_transmitters = { path = ".", editable = true }
+pandas = ">=2.3.1, <3"
+typing = "*"
+scikit-learn = "*"
+omegaconf = "*"
+numpy = "*"
+monai = "*"
+tqdm = "*"
+ipykernel = ">=6.30.0, <7"
+cloud-volume = "*"
+caveclient = ">=7.11.0, <8"
+matplotlib = ">=3.10.3, <4"
+
+[tool.pixi.tasks]
+"split" = "python main.py split"
