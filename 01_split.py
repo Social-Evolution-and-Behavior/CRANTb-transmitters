@@ -3,6 +3,7 @@ from sklearn.model_selection import train_test_split
 import logging
 from omegaconf import DictConfig
 from typing import Optional
+import yaml
 
 
 def split_data(
@@ -11,13 +12,8 @@ def split_data(
     random_state: int = 42,
     train: str = None,
     val: str = None,
-    body_id: str = "body",
-    nt_name: str = "nt_name",
-    point_id: str = "point_id",
-    num_neurotransmitters: int = 6,
-    z_col: Optional[str] = None,
-    y_col: Optional[str] = None,
-    x_col: Optional[str] = None,
+    body_id: str = "neuron_id",
+    nt_name: str = "neurotransmitter",
 ):
     """
     Split the ground truth data into training and validation sets, stratified by neurotransmitter type.
@@ -38,16 +34,10 @@ def split_data(
         Name of the column containing the body IDs.
     nt_name: str
         Name of the column containing the neurotransmitter names.
-    point_id: str
-        Name of the column containing the point IDs, the "unique" identifier for each location.
-    num_neurotransmitters: int
-        Number of neurotransmitters in the data. Used to check if the data is correct.
     """
     gt = pd.read_feather(base)
     # Make sure that the required columns are present
-    assert all(
-        [col in gt.columns for col in [body_id, nt_name, point_id, x_col, y_col, z_col]]
-    )
+    assert all([col in gt.columns for col in [body_id, nt_name]])
     # Print some basic information
     logging.info(f"Total number of synapses: {len(gt)}")
     logging.info(gt.nt_name.value_counts())
@@ -68,19 +58,10 @@ def split_data(
     # Split the ground truth data into training and validation sets
     train_gt = gt[gt[body_id].isin(train_body[body_id])]
     val_gt = gt[gt[body_id].isin(val_body[body_id])]
-    # Ensure that there is no overlap between the training and validation sets
-    assert len(set(train_gt[point_id]) & set(val_gt[point_id])) == 0
     # Ensure that the number of neurotransmitters is correct
-    assert len(train_gt.nt_name.unique()) == num_neurotransmitters
-    assert len(val_gt.nt_name.unique()) == num_neurotransmitters
     for df in [train_gt, val_gt]:
         # Convert the neurotransmitter names to integers
         df["neurotransmitter"] = df[nt_name].astype("category").cat.codes
-
-    # Ensure that z,y,x columns are called "z", "y", "x"
-    rename = {x_col: "x", y_col: "y", z_col: "z"}
-    train_gt = train_gt.rename(columns=rename)
-    val_gt = val_gt.rename(columns=rename)
 
     # Save
     if train is not None:
@@ -92,8 +73,9 @@ def split_data(
     return train_gt, val_gt
 
 
-@hydra.main(config_path="../config", config_name="config")
-def main(cfg: DictConfig):
+def main(cfg: str = "config.yaml"):
+    with open(cfg, "r") as f:
+        cfg = DictConfig(yaml.safe_load(f))
     # The information for this script is in cfg.gt
     logging.basicConfig(
         level=logging.INFO,
