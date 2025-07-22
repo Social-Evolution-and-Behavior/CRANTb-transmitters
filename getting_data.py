@@ -7,6 +7,7 @@ import time
 from time import perf_counter
 from typing import Optional
 import typer
+import os
 
 
 def main(
@@ -44,6 +45,7 @@ def main(
         end_index = len(locations)
     locations = locations[start_index:end_index]
 
+    os.environ["CLOUDFILES_DIR"] = "/ru-auth/local/home/jlee11/scratch/nt_predictions/cloudfiles"
     cv = CloudVolume(
         cloudpath=cloud_volume_path,
         use_https=True,
