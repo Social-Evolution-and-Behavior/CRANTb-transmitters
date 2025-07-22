@@ -1,5 +1,7 @@
 import cloudvolume
 import pandas as pd
+import numpy as np
+import torch
 from torch.utils.data import Dataset
 from monai.transforms import (
     Compose,
@@ -37,6 +39,17 @@ def test_transform():
     return transform
 
 
+def compute_class_weights(classes, num_classes):
+    """
+    Compute class weights based on the frequency of each class.
+    """
+    class_counts = np.bincount(classes, minlength=num_classes)
+    total_count = class_counts.sum()
+    class_weights = total_count / (num_classes * class_counts)
+    class_weights = torch.tensor(class_weights, dtype=torch.float32)
+    return class_weights
+
+
 class CloudVolumeDataset(Dataset):
     """
     Dataset that allows access to specific locations in a cloud volume array.
@@ -58,6 +71,7 @@ class CloudVolumeDataset(Dataset):
         self.locations, self.classes, self.class_names = self._read_metadata(
             metadata_path, classes
         )
+        self.weights = compute_class_weights(self.classes, len(self.class_names))
         self.crop_size = crop_size  # Size around each location to crop
         self.transform = transform
         # Setup for the cloud volume

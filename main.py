@@ -123,8 +123,7 @@ def train(cfg: str = "config.yaml"):
     # Initialize model, optimizer, and loss function
     model = load_model(config)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.train.learning_rate)
-    # TODO add class weights to account for class imbalance
-    loss_fn = torch.nn.CrossEntropyLoss(weight=None)
+    loss_fn = torch.nn.CrossEntropyLoss(weight=dataset.weights)  # Use class weights
     val_loss_fn = torch.nn.CrossEntropyLoss(weight=None)  # No weight for validation
 
     # Prepare everything with accelerator
