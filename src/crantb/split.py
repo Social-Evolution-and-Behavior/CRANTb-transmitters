@@ -66,10 +66,6 @@ def split_data(
     # Split the ground truth data into training and validation sets
     train_gt = gt[gt[body_id].isin(train_body[body_id])]
     val_gt = gt[gt[body_id].isin(val_body[body_id])]
-    # Ensure that the number of neurotransmitters is correct
-    for df in [train_gt, val_gt]:
-        # Convert the neurotransmitter names to integers
-        df["neurotransmitter"] = df[nt_name].astype("category").cat.codes
     # print some basic information about the split
     logging.info(f"Training set size: {len(train_gt)}")
     logging.info(train_gt[nt_name].value_counts())
