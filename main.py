@@ -1,12 +1,13 @@
 from crantb.data import CloudVolumeDataset, train_transform, test_transform
 from crantb.split import split_data
-from monai.networks.nets import ResNet
+from monai.networks.nets import resnet
 import logging
 from pathlib import Path
 from omegaconf import OmegaConf
 import torch
 import typer
 import time
+from tqdm import tqdm
 
 
 # The CLI
@@ -41,21 +42,20 @@ def load_dataset(cfg: OmegaConf, split="train") -> CloudVolumeDataset:
     )
 
 
-def load_model(cfg: OmegaConf, num_classes: int) -> torch.nn.Module:
+def load_model(cfg: OmegaConf) -> torch.nn.Module:
     """
     Load the model based on the configuration.
 
     Uses the `model` part of the configuration file.
     """
-    if cfg.model_type == "resnet":
-        model = ResNet(
-            spatial_dims=len(cfg.data.voxel_size),
-            n_input_channels=cfg.data.channels,
-            num_classes=len(cfg.gt.neurotransmitters),
-        )
-    else:
-        raise ValueError(f"Model type {cfg.model_type} is not supported.")
-
+    model = resnet.ResNet(
+        block="basic",
+        layers=[3, 4, 6, 3],  # ResNet50 layer configuration
+        block_inplanes=resnet.get_inplanes(),
+        spatial_dims=len(cfg.data.voxel_size),
+        n_input_channels=cfg.data.channels,
+        num_classes=len(cfg.gt.neurotransmitters),
+    )
     return model
 
 
@@ -86,24 +86,44 @@ def train(cfg: str = "config.yaml"):
     Train the model based on the configuration.
     """
     config = load_config(cfg)
-    # Here you would implement the training logic using the config
     dataset = load_dataset(config, split="train")
     logging.info(f"Loaded training dataset with {len(dataset)} samples.")
-    # Shape of the input data
+    # seeded shuffling with a generator
+    torch.manual_seed(config.seed)
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=config.train.batch_size,
         shuffle=True,
         num_workers=0,
     )
+    model = load_model(config)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.train.learning_rate)
+    loss_fn = torch.nn.CrossEntropyLoss()
     # Get an example batch
     t0 = time.time()
-    for batch in dataloader:
-        x, y = batch
-        logging.info(f"Input shape: {x.shape}, Label shape: {y.shape}")
-        logging.info(f"Time taken to load a batch: {time.time() - t0:.2f} seconds")
-        t0 = time.time()
-        break
+    for epoch in range(config.train.epochs):
+        epoch_loss = 0.0
+        for batch in tqdm(dataloader):
+            x, y = batch
+            logging.info(f"Input shape: {x.shape}, Label shape: {y.shape}")
+            logging.info(f"Time taken to load a batch: {time.time() - t0:.2f} seconds")
+            logging.info(f"Classes: {y}")
+            t0 = time.time()
+            # Loop
+            optimizer.zero_grad()
+            # Forward pass
+            outputs = model(x)
+            loss = loss_fn(outputs, y.long())
+            epoch_loss += loss.item()
+            # Backward pass
+            loss.backward()
+            optimizer.step()
+            break
+        logging.info(
+            f"Epoch {epoch + 1}/{config.train.epochs}, Loss: {epoch_loss / len(dataloader)}"
+        )
+        # TODO save model checkpoints
+        # TODO log metrics
 
 
 def test(cfg: str):
