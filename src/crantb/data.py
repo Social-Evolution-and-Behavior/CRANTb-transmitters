@@ -49,7 +49,10 @@ class CloudVolumeDataset(Dataset):
         classes=None,
         crop_size=(64, 64, 64),
         transform=None,
-        **kwargs,
+        cache=None,
+        use_https=True,
+        parallel=True,
+        progress=False,
     ):
         super().__init__()
         self.locations, self.classes, self.class_names = self._read_metadata(
@@ -59,16 +62,13 @@ class CloudVolumeDataset(Dataset):
         self.transform = transform
         # Setup for the cloud volume
         self.cloud_volume_path = cloud_volume_path
-        self._cloud_volume = None
-        self._cloud_volume_kwargs = kwargs
-
-    @property
-    def cloud_volume(self):
-        if self._cloud_volume is None:
-            self._cloud_volume = cloudvolume.CloudVolume(
-                self.cloud_volume_path, **self._cloud_volume_kwargs
-            )
-        return self._cloud_volume
+        self.cloud_volume = cloudvolume.CloudVolume(
+            self.cloud_volume_path,
+            cache=cache,
+            use_https=use_https,
+            parallel=parallel,
+            progress=progress,
+        )
 
     def _read_metadata(self, metadata_path, classes=None):
         """
