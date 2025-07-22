@@ -2,16 +2,16 @@
 # Notebook to figure out how to access the raw data
 from cloudvolume import CloudVolume
 import pandas as pd
-import pandas as pd
 from tqdm import tqdm
+import time
 from time import perf_counter
 from typing import Optional
 import typer
 
 
 def main(
-    locations_file: str,
-    cache_path: str,
+    locations_file: str = "/ru-auth/local/home/jlee11/scratch/nt_predictions/250721_pseudoGT_neurotransmitter_noduplicates.feather",
+    cache_path: str = "/ru-auth/local/home/jlee11/scratch/nt_predictions/caches",
     start_index: int = 0,
     end_index: Optional[int] = None,
     dx: int = 80,
@@ -33,6 +33,11 @@ def main(
         cloud_volume_path (str): Path to the CloudVolume to download data from.
     """
     df = pd.read_feather(locations_file)
+    #subsetting
+    df = df.sample(n=10000, random_state=42)
+    df.to_feather(f"imported_synapses_{time.strftime("%Y%m%d")}.feather")
+    
+    
     locations = df[["x", "y", "z"]].values
     # Only get the locations between start_index and end_index
     if end_index is None:
@@ -47,14 +52,29 @@ def main(
         parallel=True,
     )
 
-    for i, (x, y, z) in tqdm(
-        enumerate(locations),
-        total=len(locations),
-        desc="Downloading data",
-    ):
+    # tqdm option
+
+    # for i, (x, y, z) in tqdm(
+    #     enumerate(locations),
+    #     total=len(locations),
+    #     desc="Downloading data",
+    # ):
+    #     # Get the data from the cloud volume
+    #     data = cv[x : x + dx, y : y + dy, z : z + dz]
+    #     # This should cache the data locally
+    
+    #every 50 synapses for slurm 
+    total = len(locations)
+    start_loop_time = perf_counter()
+    for i, (x, y, z) in enumerate(locations):
         # Get the data from the cloud volume
         data = cv[x : x + dx, y : y + dy, z : z + dz]
         # This should cache the data locally
+        if i == 1 or i % 50 == 0 and i > 0:
+            elapsed = perf_counter() - start_loop_time
+            rate = elapsed / i
+            remaining = rate * (total - i)
+            print(f"Processed {i}/{total}. Elapsed: {elapsed:.2f}s, Estimated remaining: {remaining:.2f}s")
 
     # Check that the data is cached by comparing the time it takes
     # Get the first location
