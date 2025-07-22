@@ -21,6 +21,7 @@ import typer
 import time
 from tqdm import tqdm
 from accelerate import Accelerator
+from accelerate.utils import set_seed
 import numpy as np
 import pandas as pd
 
@@ -100,9 +101,10 @@ def train(cfg: str = "config.yaml"):
     """
     Train the model based on the configuration.
     """
-    # Initialize accelerator
-    accelerator = Accelerator(seed=config.seed)
     config = load_config(cfg)
+    # Initialize accelerator
+    set_seed(config.seed)
+    accelerator = Accelerator()
     dataset = load_dataset(config, split="train")
     val_dataset = load_dataset(config, split="val")
     # Dataloaders
@@ -120,16 +122,21 @@ def train(cfg: str = "config.yaml"):
         num_workers=0,
         pin_memory=True,
     )
-    # Initialize model, optimizer, and loss function
+    # Initialize model, optimizer
     model = load_model(config)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.train.learning_rate)
-    loss_fn = torch.nn.CrossEntropyLoss(weight=dataset.weights)  # Use class weights
-    val_loss_fn = torch.nn.CrossEntropyLoss(weight=None)  # No weight for validation
 
-    # Prepare everything with accelerator
+    # Prepare model and optimizer with accelerator
     model, optimizer, dataloader, val_dataloader = accelerator.prepare(
         model, optimizer, dataloader, val_dataloader
     )
+
+    # Losses
+    class_weights = dataset.weights.to(accelerator.device)
+    loss_fn = torch.nn.CrossEntropyLoss(
+        weight=class_weights
+    )  # Use class weights to account for class imbalance
+    val_loss_fn = torch.nn.CrossEntropyLoss(weight=None)  # No weight for validation
 
     # Training loop
     for epoch in range(config.train.epochs):

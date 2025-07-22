@@ -44,9 +44,14 @@ def compute_class_weights(classes, num_classes):
     Compute class weights based on the frequency of each class.
     """
     class_counts = np.bincount(classes, minlength=num_classes)
+    # Handle classes that don't appear in this split
+    class_counts = np.where(class_counts == 0, 1, class_counts)
     total_count = class_counts.sum()
     class_weights = total_count / (num_classes * class_counts)
     class_weights = torch.tensor(class_weights, dtype=torch.float32)
+    assert (
+        len(class_weights) == num_classes
+    ), f"Class weights length {len(class_weights)} does not match number of classes {num_classes}"
     return class_weights
 
 
@@ -68,10 +73,10 @@ class CloudVolumeDataset(Dataset):
         progress=False,
     ):
         super().__init__()
-        self.locations, self.classes, self.class_names = self._read_metadata(
+        self.locations, self.targets, self.class_names = self._read_metadata(
             metadata_path, classes
         )
-        self.weights = compute_class_weights(self.classes, len(self.class_names))
+        self.weights = compute_class_weights(self.targets, len(self.class_names))
         self.crop_size = crop_size  # Size around each location to crop
         self.transform = transform
         # Setup for the cloud volume
@@ -90,19 +95,21 @@ class CloudVolumeDataset(Dataset):
         """
         metadata = pd.read_feather(metadata_path)
         locations = metadata[["x", "y", "z"]].values
-        if classes is not None:
-            # If classes are provided, filter the metadata
-            metadata = metadata[metadata["neurotransmitter"].isin(classes)]
-        classes = metadata["neurotransmitter"]
-        # Get the names of the classes
-        class_names = classes.astype("category").cat.categories
+        # Get all available class names from the metadata column, even if not present in this split
+        available_classes = (
+            metadata["neurotransmitter"].astype("category").cat.categories
+        )
+        if classes is None:
+            classes = available_classes
+        # Only use provided classes, but ensure all possible classes are counted
+        class_names = pd.Categorical(classes, categories=classes).categories
         # turn into a dictionary from index to name
         class_names = {i: name for i, name in enumerate(class_names)}
         # Convert the classes to numerical values
-        classes = classes.astype(
-            "category"
-        ).cat.codes.values  # Neurotransmitters to numerical
-        return locations, classes, class_names
+        targets = (
+            metadata["neurotransmitter"].astype("category").cat.codes.values
+        )  # Neurotransmitters to numerical
+        return locations, targets, class_names
 
     def __len__(self):
         return len(self.locations)
@@ -127,4 +134,4 @@ class CloudVolumeDataset(Dataset):
         if self.transform:
             cropped_volume = self.transform(cropped_volume)
 
-        return cropped_volume, self.classes[idx]
+        return cropped_volume, self.targets[idx]
