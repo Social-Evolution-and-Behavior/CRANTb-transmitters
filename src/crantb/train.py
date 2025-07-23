@@ -121,6 +121,7 @@ def load_checkpoint(model, optimizer, base_directory):
     model.load_state_dict(checkpoint["model_state_dict"])
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
     epoch = int(latest_checkpoint.stem.split("_")[-1])  # Convert to zero-based index
+    logging.info(f"Loaded checkpoint from {latest_checkpoint} for epoch {epoch}")
     return model, optimizer, epoch
 
 

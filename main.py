@@ -128,15 +128,23 @@ def train(
     model = load_model(config)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.train.learning_rate)
 
-    start_epoch = 0
-    if resume:
-        # Load the latest checkpoint and
-        # resume training.
-        model, optimizer, start_epoch = load_checkpoint(
-            model, optimizer, config.train.base
-        )
-        # We can directly use start_epoch because the checkpoint names are 1-indexed by range is 0-indexed
-        logging.info(f"Loaded checkpoint from epoch {start_epoch}")
+    if not resume:
+        # Delete the metrics folder and start fresh
+        metrics_path = Path(config.train.base) / "metrics"
+        if metrics_path.exists():
+            for file in metrics_path.glob("*.json"):
+                file.unlink()
+            logging.info(f"Deleted existing metrics in {metrics_path}")
+        # Delete the checkpoints folder and start fresh
+        checkpoints_path = Path(config.train.base) / "checkpoints"
+        if checkpoints_path.exists():
+            for file in checkpoints_path.glob("*.pth"):
+                file.unlink()
+            logging.info(f"Deleted existing checkpoints in {checkpoints_path}")
+
+    # Load the latest checkpoint and
+    # resume training.
+    model, optimizer, start_epoch = load_checkpoint(model, optimizer, config.train.base)
 
     # Prepare model and optimizer with accelerator
     model, optimizer, dataloader, val_dataloader = accelerator.prepare(
