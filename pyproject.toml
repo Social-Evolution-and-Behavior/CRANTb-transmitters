@@ -38,3 +38,4 @@ accelerate = "*"
 [tool.pixi.tasks]
 "split" = "python main.py split"
 "train" = "python main.py train"
+"report" = "python main.py report"

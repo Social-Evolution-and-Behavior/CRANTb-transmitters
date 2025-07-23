@@ -3,6 +3,8 @@ import os
 # Enable MPS fallback for unsupported operations - MUST be set before importing torch
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
+from accelerate import Accelerator
+from accelerate.utils import set_seed
 from crantb.data import CloudVolumeDataset, train_transform, test_transform
 from crantb.split import split_data
 from crantb.train import (
@@ -13,15 +15,15 @@ from crantb.train import (
     store_metrics,
     compute_val_metrics,
 )
-from monai.networks.nets import resnet
 import logging
-from pathlib import Path
+from monai.networks.nets import resnet
+import numpy as np
 from omegaconf import OmegaConf
+import pandas as pd
+from pathlib import Path
 import torch
 import typer
 from typing import Optional, Annotated
-from accelerate import Accelerator
-from accelerate.utils import set_seed
 
 
 # The CLI
@@ -132,7 +134,9 @@ def train(
         # Delete the metrics folder and start fresh
         metrics_path = Path(config.train.base) / "metrics"
         if metrics_path.exists():
-            for file in metrics_path.glob("*.json"):
+            for file in metrics_path.glob("*.txt"):
+                file.unlink()
+            for file in metrics_path.glob("*.csv"):
                 file.unlink()
             logging.info(f"Deleted existing metrics in {metrics_path}")
         # Delete the checkpoints folder and start fresh
@@ -185,10 +189,35 @@ def train(
             save_checkpoint(model, optimizer, epoch, config)
 
 
-def test(cfg: str):
+@app.command()
+def report(cfg: str = "config.yaml", epoch: int = None, metric="balanced_accuracy"):
+    """
+    Report the results of the training.
+
+    This reads through the metrics files and prints the results.
+    """
     config = load_config(cfg)
-    print("Testing with configuration:", config)
-    # Here you would implement the testing logic using the config
+    # Load the metrics
+    metrics_path = Path(config.train.base) / "metrics"
+    if not metrics_path.exists():
+        logging.error(f"Metrics path {metrics_path} does not exist.")
+        return
+    metrics = pd.read_csv(metrics_path / "training_metrics.csv")
+    # Set the epoch as the index
+    metrics.set_index("epoch", inplace=True)
+    if epoch is None:
+        # Select and print the epoch with the highest metric
+        epoch = metrics[metric].idxmax()
+        print(f"Selected epoch {epoch} with highest {metric}: {metrics[metric].max()}")
+
+    print(f"Results for epoch {epoch}:")
+    for name, value in metrics.loc[epoch].to_dict().items():
+        print(f"\t- {name}: {value}")
+    # Get the confusion matrix from the file
+    confusion_matrix = np.loadtxt(metrics_path / f"confusion_matrix_epoch_{epoch}.txt")
+    print()
+    print("Confusion Matrix:")
+    print(confusion_matrix)
 
 
 def inference(cfg: str):
