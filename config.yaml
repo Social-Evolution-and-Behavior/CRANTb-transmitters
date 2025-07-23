@@ -1,10 +1,11 @@
 data:
   container: "precomputed://gs://dkronauer-ant-001-alignment-final/aligned"
+  cache: "/lustre/fs4/kron_lab/scratch/llopes/neurotransmitters/cache" 
   voxel_size: [8, 8, 42]
   channels: 1
   use_https: true
-  cache: true
-  progress: true
+  progress: false
+  parallel: true
 
 gt:
   neurotransmitters: 
@@ -27,15 +28,9 @@ train:
     - 80
     - 80
     - 16
-  log_every: 100
-  num_iterations: 100000
   batch_size: 16
-  save_every: 10000
-  snapshot_every: 10000
   learning_rate: 0.0001
-  num_cache_workers: 12
+  epochs: 100
 
 validate: 
   batch_size: 32
-  num_partitions: 10
-  partition_id: 1

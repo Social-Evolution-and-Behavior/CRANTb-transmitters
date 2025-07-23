@@ -1,12 +1,27 @@
+import os
+
+# Enable MPS fallback for unsupported operations - MUST be set before importing torch
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+
 from crantb.data import CloudVolumeDataset, train_transform, test_transform
 from crantb.split import split_data
-from monai.networks.nets import ResNet
+from crantb.train import (
+    train_one_epoch,
+    validate_one_epoch,
+    save_checkpoint,
+    load_checkpoint,
+    store_metrics,
+    compute_val_metrics,
+)
+from monai.networks.nets import resnet
 import logging
 from pathlib import Path
 from omegaconf import OmegaConf
 import torch
 import typer
-import time
+from typing import Optional, Annotated
+from accelerate import Accelerator
+from accelerate.utils import set_seed
 
 
 # The CLI
@@ -34,28 +49,27 @@ def load_dataset(cfg: OmegaConf, split="train") -> CloudVolumeDataset:
         classes=cfg.gt.neurotransmitters,
         crop_size=cfg.train.input_shape,
         transform=transform,
-        parallel=8,
+        parallel=cfg.data.parallel,
         use_https=cfg.data.use_https,
         cache=cfg.data.cache,
         progress=cfg.data.progress,
     )
 
 
-def load_model(cfg: OmegaConf, num_classes: int) -> torch.nn.Module:
+def load_model(cfg: OmegaConf) -> torch.nn.Module:
     """
     Load the model based on the configuration.
 
     Uses the `model` part of the configuration file.
     """
-    if cfg.model_type == "resnet":
-        model = ResNet(
-            spatial_dims=len(cfg.data.voxel_size),
-            n_input_channels=cfg.data.channels,
-            num_classes=len(cfg.gt.neurotransmitters),
-        )
-    else:
-        raise ValueError(f"Model type {cfg.model_type} is not supported.")
-
+    model = resnet.ResNet(
+        block="basic",
+        layers=[3, 4, 6, 3],  # ResNet50 layer configuration
+        block_inplanes=resnet.get_inplanes(),
+        spatial_dims=len(cfg.data.voxel_size),
+        n_input_channels=cfg.data.channels,
+        num_classes=len(cfg.gt.neurotransmitters),
+    )
     return model
 
 
@@ -81,29 +95,94 @@ def split(cfg: str = "config.yaml"):
 
 
 @app.command()
-def train(cfg: str = "config.yaml"):
+def train(
+    cfg: str = "config.yaml",
+    epochs: Optional[int] = None,
+    resume: Annotated[Optional[bool], typer.Option("--resume/--restart")] = True,
+):
     """
     Train the model based on the configuration.
     """
     config = load_config(cfg)
-    # Here you would implement the training logic using the config
+    # Initialize accelerator
+    set_seed(config.seed)
+    accelerator = Accelerator()
     dataset = load_dataset(config, split="train")
-    logging.info(f"Loaded training dataset with {len(dataset)} samples.")
-    # Shape of the input data
+    val_dataset = load_dataset(config, split="val")
+    # Dataloaders
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=config.train.batch_size,
         shuffle=True,
         num_workers=0,
+        pin_memory=True,
     )
-    # Get an example batch
-    t0 = time.time()
-    for batch in dataloader:
-        x, y = batch
-        logging.info(f"Input shape: {x.shape}, Label shape: {y.shape}")
-        logging.info(f"Time taken to load a batch: {time.time() - t0:.2f} seconds")
-        t0 = time.time()
-        break
+    val_dataloader = torch.utils.data.DataLoader(
+        val_dataset,
+        batch_size=config.validate.batch_size,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=True,
+    )
+    # Initialize model, optimizer
+    model = load_model(config)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.train.learning_rate)
+
+    if not resume:
+        # Delete the metrics folder and start fresh
+        metrics_path = Path(config.train.base) / "metrics"
+        if metrics_path.exists():
+            for file in metrics_path.glob("*.json"):
+                file.unlink()
+            logging.info(f"Deleted existing metrics in {metrics_path}")
+        # Delete the checkpoints folder and start fresh
+        checkpoints_path = Path(config.train.base) / "checkpoints"
+        if checkpoints_path.exists():
+            for file in checkpoints_path.glob("*.pth"):
+                file.unlink()
+            logging.info(f"Deleted existing checkpoints in {checkpoints_path}")
+
+    # Load the latest checkpoint and
+    # resume training.
+    model, optimizer, start_epoch = load_checkpoint(model, optimizer, config.train.base)
+
+    # Prepare model and optimizer with accelerator
+    model, optimizer, dataloader, val_dataloader = accelerator.prepare(
+        model, optimizer, dataloader, val_dataloader
+    )
+
+    # Losses
+    class_weights = dataset.weights.to(accelerator.device)
+    loss_fn = torch.nn.CrossEntropyLoss(
+        weight=class_weights
+    )  # Use class weights to account for class imbalance
+    val_loss_fn = torch.nn.CrossEntropyLoss(weight=None)  # No weight for validation
+
+    # Training loop
+    if epochs is None:
+        epochs = config.train.epochs
+
+    for epoch in range(start_epoch, epochs):
+        epoch_loss = train_one_epoch(
+            epoch, model, dataloader, optimizer, loss_fn, accelerator
+        )
+        epoch_val_loss, predictions, targets = validate_one_epoch(
+            epoch, model, val_dataloader, val_loss_fn, accelerator, config
+        )
+        if accelerator.is_main_process:
+            accuracy, balanced_accuracy, confusion_matrix = compute_val_metrics(
+                predictions, targets, config
+            )
+            store_metrics(
+                epoch,
+                epoch_loss=epoch_loss,
+                epoch_val_loss=epoch_val_loss,
+                accuracy=accuracy,
+                balanced_accuracy=balanced_accuracy,
+                confusion_matrix=confusion_matrix,
+                config=config,
+            )
+            save_checkpoint(model, optimizer, epoch, config)
 
 
 def test(cfg: str):
