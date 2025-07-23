@@ -71,12 +71,15 @@ class CloudVolumeDataset(Dataset):
         use_https=True,
         parallel=True,
         progress=False,
+        inference=False,
     ):
         super().__init__()
+        self.inference = inference
         self.locations, self.targets, self.class_names = self._read_metadata(
             metadata_path, classes
         )
-        self.weights = compute_class_weights(self.targets, len(self.class_names))
+        if not self.inference:
+            self.weights = compute_class_weights(self.targets, len(self.class_names))
         self.crop_size = crop_size  # Size around each location to crop
         self.transform = transform
         # Setup for the cloud volume
@@ -95,6 +98,12 @@ class CloudVolumeDataset(Dataset):
         """
         metadata = pd.read_feather(metadata_path)
         locations = metadata[["x", "y", "z"]].values
+        if self.inference:
+            class_names = None
+            if classes:
+                class_names = {i: name for i, name in enumerate(sorted(classes))}
+            # For inference, we only need the locations
+            return locations, None, class_names
         # Get all available class names from the metadata column, even if not present in this split
         available_classes = (
             metadata["neurotransmitter"].astype("category").cat.categories
@@ -133,5 +142,9 @@ class CloudVolumeDataset(Dataset):
 
         if self.transform:
             cropped_volume = self.transform(cropped_volume)
+
+        if self.inference:
+            # For inference, we only return the cropped volume
+            return cropped_volume
 
         return cropped_volume, self.targets[idx]
