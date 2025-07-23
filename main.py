@@ -8,7 +8,8 @@ from crantb.split import split_data
 from crantb.train import (
     train_one_epoch,
     validate_one_epoch,
-    save_model_checkpoint,
+    save_checkpoint,
+    load_checkpoint,
     store_metrics,
     compute_val_metrics,
 )
@@ -18,12 +19,9 @@ from pathlib import Path
 from omegaconf import OmegaConf
 import torch
 import typer
-import time
-from tqdm import tqdm
+from typing import Optional, Annotated
 from accelerate import Accelerator
 from accelerate.utils import set_seed
-import numpy as np
-import pandas as pd
 
 
 # The CLI
@@ -97,7 +95,11 @@ def split(cfg: str = "config.yaml"):
 
 
 @app.command()
-def train(cfg: str = "config.yaml"):
+def train(
+    cfg: str = "config.yaml",
+    epochs: Optional[int] = None,
+    resume: Annotated[Optional[bool], typer.Option("--resume/--restart")] = True,
+):
     """
     Train the model based on the configuration.
     """
@@ -126,6 +128,16 @@ def train(cfg: str = "config.yaml"):
     model = load_model(config)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.train.learning_rate)
 
+    start_epoch = 0
+    if resume:
+        # Load the latest checkpoint and
+        # resume training.
+        model, optimizer, start_epoch = load_checkpoint(
+            model, optimizer, config.train.base
+        )
+        # We can directly use start_epoch because the checkpoint names are 1-indexed by range is 0-indexed
+        logging.info(f"Loaded checkpoint from epoch {start_epoch}")
+
     # Prepare model and optimizer with accelerator
     model, optimizer, dataloader, val_dataloader = accelerator.prepare(
         model, optimizer, dataloader, val_dataloader
@@ -139,7 +151,10 @@ def train(cfg: str = "config.yaml"):
     val_loss_fn = torch.nn.CrossEntropyLoss(weight=None)  # No weight for validation
 
     # Training loop
-    for epoch in range(config.train.epochs):
+    if epochs is None:
+        epochs = config.train.epochs
+
+    for epoch in range(start_epoch, epochs):
         epoch_loss = train_one_epoch(
             epoch, model, dataloader, optimizer, loss_fn, accelerator
         )
@@ -159,7 +174,7 @@ def train(cfg: str = "config.yaml"):
                 confusion_matrix=confusion_matrix,
                 config=config,
             )
-            save_model_checkpoint(model, epoch, config)
+            save_checkpoint(model, optimizer, epoch, config)
 
 
 def test(cfg: str):

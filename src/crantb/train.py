@@ -1,10 +1,11 @@
-from tqdm import tqdm
-import torch
-from sklearn.metrics import accuracy_score, confusion_matrix, balanced_accuracy_score
-from pathlib import Path
+import logging
 import numpy as np
 from omegaconf import OmegaConf
 import pandas as pd
+from pathlib import Path
+from sklearn.metrics import accuracy_score, confusion_matrix, balanced_accuracy_score
+import torch
+from tqdm import tqdm
 
 
 def store_metrics(
@@ -80,17 +81,47 @@ def compute_val_metrics(all_predictions: list, all_targets: list, config: OmegaC
     return accuracy, balanced_accuracy, conf_matrix
 
 
-def save_model_checkpoint(model, epoch, config):
+def save_checkpoint(model, optimizer, epoch, config):
     """Save the model checkpoint after each epoch."""
     # Create checkpoint and metrics directories
     checkpoint_dir = Path(config.train.base) / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save model checkpoint
+    # Save model and optimizer checkpoint
     torch.save(
-        model.state_dict(),
+        {
+            "epoch": epoch + 1,  # Store epoch as 1-based index
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+        },
         checkpoint_dir / f"model_epoch_{epoch + 1}.pth",
     )
+
+
+def load_checkpoint(model, optimizer, base_directory):
+    """
+    Find and load the latest checkpoint.
+
+    It will be under base_directory/checkpoints/ and will have the format
+    model_epoch_X.pth where X is the epoch number.
+
+    Also returns the epoch number of the loaded checkpoint.
+    """
+    checkpoint_dir = Path(base_directory) / "checkpoints"
+    checkpoints = list(checkpoint_dir.glob("model_epoch_*.pth"))
+    if not checkpoints:
+        return model, optimizer, 0  # No checkpoint found, return model and epoch 0
+
+    # Sort checkpoints by epoch number
+    checkpoints.sort(key=lambda x: int(x.stem.split("_")[-1]))
+    latest_checkpoint = checkpoints[-1]
+
+    # Load the model state
+    checkpoint = torch.load(latest_checkpoint, map_location="cpu")
+    model.load_state_dict(checkpoint["model_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    epoch = int(latest_checkpoint.stem.split("_")[-1])  # Convert to zero-based index
+    return model, optimizer, epoch
 
 
 def train_one_epoch(epoch, model, dataloader, optimizer, loss_fn, accelerator):

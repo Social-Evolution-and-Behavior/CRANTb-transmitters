@@ -54,3 +54,11 @@ Make sure to set:
 - `train.input_shape`: the x,y,z shape of each block around a synapse.
 - `train.batch_size`: the batch size for training. Can scale with the size of your GPU.
 - `validate.batch_size`: the batch size for validation. Can be larger than for training.
+
+You can train for longer than what your configuration file says by using the `--epochs` option. This will override what is in the configuration file. This will not change your configuration file, however, so make sure to keep track of that some other way!
+```
+pixi run train --cfg config.yaml --epochs 10
+```
+
+Additionally, the training script will resume runs by default: it will load the latest checkpoint and train from there until the `epochs` value that you have defined. 
+If you would prefer to start training from scratch for this configuration, set `--restart`.
