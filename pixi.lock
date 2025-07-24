@@ -579,7 +579,7 @@ packages:
 - pypi: .
   name: crantb-transmitters
   version: 0.1.0
-  sha256: 48099696a9eea9845425221e7449d8f0ea931fc63eeb49ec656ce1deb9f7fbae
+  sha256: 7a7739f59470d46632aece2b94cfacacad9f2092d071f439f20c61e14f22ded4
   requires_dist:
   - typer>=0.16.0,<0.17
   requires_python: '>=3.11'

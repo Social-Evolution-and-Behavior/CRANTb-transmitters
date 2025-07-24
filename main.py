@@ -296,6 +296,29 @@ def inference(
     )
 
 
+@app.command()
+def merge(
+    input_filenames: list[str] = typer.Argument(help="List of feather files to merge"),
+    output_filename="merged_inference_results.feather",
+):
+    """
+    Merge multiple feather files into a single DataFrame and save it as a feather file.
+    This is useful for combining results from multiple or distributed inference runs.
+
+    Args:
+        filenames (list of str): List of paths to the feather files to merge.
+    """
+    # Read and concatenate all DataFrames from the provided filenames
+    if input_filenames is None:
+        raise ValueError("Please provide a list of input filenames to merge.")
+    dataframes = [pd.read_feather(filename) for filename in input_filenames]
+    merged_df = pd.concat(dataframes, ignore_index=True)
+
+    # Save the merged DataFrame to a new feather file
+    merged_df.to_feather(output_filename)
+    print(f"Merged results saved to {output_filename}")
+
+
 if __name__ == "__main__":
     # Set logging level
     logging.basicConfig(level=logging.INFO)
