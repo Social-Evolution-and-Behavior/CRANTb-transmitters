@@ -1,11 +1,13 @@
 data:
   container: "precomputed://gs://dkronauer-ant-001-alignment-final/aligned"
-  cache: "/lustre/fs4/kron_lab/scratch/llopes/neurotransmitters/cache" 
+  cache: "/lustre/fs4/kron_lab/scratch/jlee11/nt_predictions/caches" 
   voxel_size: [8, 8, 42]
   channels: 1
   use_https: true
   progress: false
   parallel: true
+
+seed: 12345 
 
 gt:
   neurotransmitters: 
@@ -15,15 +17,15 @@ gt:
     - glutamate
     - octopamine
     - peptide
-  base: /lustre/fs4/kron_lab/scratch/llopes/neurotransmitters/gt.feather
-  train: /lustre/fs4/kron_lab/scratch/llopes/neurotransmitters/train_data.feather
-  val: /lustre/fs4/kron_lab/scratch/llopes/neurotransmitters/val_data.feather
+  base: /lustre/fs4/kron_lab/scratch/jlee11/nt_predictions/imported_synapses_20250723.feather
+  train: /lustre/fs4/kron_lab/scratch/jlee11/nt_predictions/train_data.feather
+  val: /lustre/fs4/kron_lab/scratch/jlee11/nt_predictions/val_data.feather
   body_id: "neuron_id" 
   nt_name: "neurotransmitter"
   val_size: 0.1
 
 train:
-  experiment_dir: "/lustre/fs4/kron_lab/scratch/llopes/neurotransmitters/"
+  experiment_dir: "/lustre/fs4/kron_lab/scratch/jlee11/nt_predictions/train_results"
   input_shape: 
     - 80
     - 80
