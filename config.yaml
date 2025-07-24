@@ -1,3 +1,4 @@
+seed: 42
 data:
   container: "precomputed://gs://dkronauer-ant-001-alignment-final/aligned"
   cache: "/lustre/fs4/kron_lab/scratch/jlee11/nt_predictions/caches" 
