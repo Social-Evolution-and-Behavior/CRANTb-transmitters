@@ -63,7 +63,7 @@ class CloudVolumeDataset(Dataset):
     def __init__(
         self,
         cloud_volume_path,
-        metadata_path,
+        metadata_dataframe: pd.DataFrame,
         classes=None,
         crop_size=(64, 64, 64),
         transform=None,
@@ -72,12 +72,11 @@ class CloudVolumeDataset(Dataset):
         parallel=True,
         progress=False,
         inference=False,
-        subset_indices=None,
     ):
         super().__init__()
         self.inference = inference
         self.locations, self.targets, self.class_names = self._read_metadata(
-            metadata_path, classes, subset_indices
+            metadata_dataframe, classes
         )
         if not self.inference:
             self.weights = compute_class_weights(self.targets, len(self.class_names))
@@ -93,14 +92,10 @@ class CloudVolumeDataset(Dataset):
             progress=progress,
         )
 
-    def _read_metadata(self, metadata_path, classes=None, subset_indices=None):
+    def _read_metadata(self, metadata, classes=None):
         """
         Reads metadata from a Feather file and extracts locations and classes.
         """
-        metadata = pd.read_feather(metadata_path)
-        # Only use subset, if provided
-        if subset_indices is not None:
-            metadata = metadata.iloc[subset_indices]
         locations = metadata[["x", "y", "z"]].values
         if self.inference:
             class_names = None

@@ -15,6 +15,7 @@ from crantb.train import (
     store_metrics,
     compute_val_metrics,
 )
+from crantb.inference import get_epoch_metrics, run_inference
 import logging
 from monai.networks.nets import resnet
 import numpy as np
@@ -38,16 +39,27 @@ def load_config(cfg: str) -> OmegaConf:
     return config
 
 
-def load_dataset(cfg: OmegaConf, split="train") -> CloudVolumeDataset:
+def load_dataset(
+    cfg, metadata_df: pd.DataFrame = None, split: str = "test", inference=False
+) -> CloudVolumeDataset:
     """
     Load the dataset based on the configuration.
 
     Uses the `data` part of the configuration file.
+
+    Args:
+    cfg: OmegaConf configuration
+    metadata_df: Dataframe for locations to load.
+        This is optional. If it is not provided it will be read from the configuration file using the "split"
+    split: Which data split to use. This is used to load data and select the right dataframe.
     """
+    if metadata_df is None:
+        metadata_df = pd.read_feather(cfg.gt[split])
     transform = train_transform() if split == "train" else test_transform()
+
     return CloudVolumeDataset(
         cloud_volume_path=cfg.data.container,
-        metadata_path=cfg.gt[split],
+        metadata_dataframe=metadata_df,
         classes=cfg.gt.neurotransmitters,
         crop_size=cfg.train.input_shape,
         transform=transform,
@@ -55,6 +67,7 @@ def load_dataset(cfg: OmegaConf, split="train") -> CloudVolumeDataset:
         use_https=cfg.data.use_https,
         cache=cfg.data.cache,
         progress=cfg.data.progress,
+        inference=inference,
     )
 
 
@@ -199,31 +212,86 @@ def report(cfg: str = "config.yaml", epoch: int = None, metric="balanced_accurac
     config = load_config(cfg)
     # Load the metrics
     metrics_path = Path(config.train.base) / "metrics"
-    if not metrics_path.exists():
-        logging.error(f"Metrics path {metrics_path} does not exist.")
-        return
-    metrics = pd.read_csv(metrics_path / "training_metrics.csv")
-    # Set the epoch as the index
-    metrics.set_index("epoch", inplace=True)
-    if epoch is None:
-        # Select and print the epoch with the highest metric
-        epoch = metrics[metric].idxmax()
-        print(f"Selected epoch {epoch} with highest {metric}: {metrics[metric].max()}")
-
+    metrics, epoch = get_epoch_metrics(
+        metrics_directory=metrics_path, epoch=epoch, metric=metric
+    )
     print(f"Results for epoch {epoch}:")
-    for name, value in metrics.loc[epoch].to_dict().items():
+    for name, value in metrics.items():
         print(f"\t- {name}: {value}")
     # Get the confusion matrix from the file
     confusion_matrix = np.loadtxt(metrics_path / f"confusion_matrix_epoch_{epoch}.txt")
     print()
     print("Confusion Matrix:")
     print(confusion_matrix)
+    return
 
 
-def inference(cfg: str):
+@app.command()
+def inference(
+    locations_file: str,
+    cfg: str = "config.yaml",
+    epoch: int = None,
+    output: str = "predictions.feather",
+    start_index: int = 0,
+    end_index: Optional[int] = None,
+    metric: str = "balanced_accuracy",
+):
+    """
+    Run inference on the model using the configuration.
+
+    Can be used in parallel by multiple processes by setting the `start_index` and `end_index` parameters.
+    In that case, make sure to also set the `output` file to a unique name for each process, otherwise they will overwrite each other.
+
+    Arguments:
+        locations_file: Path to the file containing locations for inference.
+        This should be a feather file with at least 'x', 'y', 'z' columns.
+        cfg: Path to the configuration file.
+        epoch: Optional; if provided, will use the model from this epoch.
+        output: Path to save the predictions to. Defaults to 'predictions.feather'.
+            This will save the predictions in a feather file with 'x', 'y', 'z', and one column for each neurotransmitter class (softmax probabilities).
+            It will also include a 'predicted_neurotransmitter' column.
+        start_index: Optional; start index for the locations to process.
+        end_index: Optional; end index for the locations to process. If not provided, will process all locations.
+    """
     config = load_config(cfg)
-    print("Running inference with configuration:", config)
-    # Here you would implement the inference logic using the config
+    set_seed(config.seed)
+    # Set up the accelerator
+    accelerator = Accelerator()
+    # Load the dataframe
+    locations_df = pd.read_feather(locations_file)
+    # Select a subset:
+    if end_index is not None:
+        locations_df = locations_df.iloc[start_index:end_index]
+    else:
+        locations_df = locations_df.iloc[start_index:]
+    # Load the dataset
+    dataset = load_dataset(config, locations_df, inference=True, split="test")
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=config.inference.batch_size,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=True,
+        drop_last=False,
+    )
+
+    model = load_model(config)
+    # Load the model from the specified epoch
+    _, epoch = get_epoch_metrics(
+        metrics_directory=Path(config.train.base) / "metrics",
+        epoch=epoch,
+        metric=metric,
+    )
+    model, _, _ = load_checkpoint(model, None, config.train.base, epoch=epoch)
+    # Prepare the model and data with the accelerator
+    model, dataloader = accelerator.prepare(model, dataloader)
+    # Run inference
+    run_inference(
+        model=model,
+        dataloader=dataloader,
+        output=output,
+        config=config,
+    )
 
 
 if __name__ == "__main__":
