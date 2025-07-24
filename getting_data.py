@@ -34,18 +34,19 @@ def main(
         cloud_volume_path (str): Path to the CloudVolume to download data from.
     """
     df = pd.read_feather(locations_file)
-    #subsetting
-    df = df.sample(n=10000, random_state=42)
+    # subsetting
+    df = df.sample(n=10000, random_state=20250724)
     df.to_feather(f"imported_synapses_{time.strftime("%Y%m%d")}.feather")
-    
-    
+
     locations = df[["x", "y", "z"]].values
     # Only get the locations between start_index and end_index
     if end_index is None:
         end_index = len(locations)
     locations = locations[start_index:end_index]
 
-    os.environ["CLOUDFILES_DIR"] = "/ru-auth/local/home/jlee11/scratch/nt_predictions/cloudfiles"
+    os.environ["CLOUDFILES_DIR"] = (
+        "/ru-auth/local/home/jlee11/scratch/nt_predictions/cloudfiles"
+    )
     cv = CloudVolume(
         cloudpath=cloud_volume_path,
         use_https=True,
@@ -64,8 +65,8 @@ def main(
     #     # Get the data from the cloud volume
     #     data = cv[x : x + dx, y : y + dy, z : z + dz]
     #     # This should cache the data locally
-    
-    #every 50 synapses for slurm 
+
+    # every 50 synapses for slurm
     total = len(locations)
     start_loop_time = perf_counter()
     for i, (x, y, z) in enumerate(locations):
@@ -76,7 +77,9 @@ def main(
             elapsed = perf_counter() - start_loop_time
             rate = elapsed / i
             remaining = rate * (total - i)
-            print(f"Processed {i}/{total}. Elapsed: {elapsed:.2f}s, Estimated remaining: {remaining:.2f}s")
+            print(
+                f"Processed {i}/{total}. Elapsed: {elapsed:.2f}s, Estimated remaining: {remaining:.2f}s"
+            )
 
     # Check that the data is cached by comparing the time it takes
     # Get the first location
