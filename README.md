@@ -72,3 +72,17 @@ Example to report the best epoch with regards to validation loss:
 ```
 pixi run report --cfg config.yaml --metric val_loss
 ```
+
+## Running inference
+The `infer` task runs inference on a provided set of locations (must be a feather file).
+By default, it will use the model with the best `balanced_accuracy` to run inference. 
+We recommend giving an output location for where to save your predictions. 
+
+An example to run inference on the locations in `source_locations.feather` and save the results in `predictions.feather`
+```
+pixi run infer --cfg config.yaml --output experiment_directory/predictions.feather experiment_directory/source_locations.feather,
+```
+
+You can also select a sub-range on which to run, for example to run inference as an array job on a cluster. 
+An example SLURM cluster job is provided in [inference.sh](inference.sh). Make sure to edit it to your specific needs.
+If you use this, you can use the `merge` task to put your results together into a single feather file after your distributed inference has stopped running.
