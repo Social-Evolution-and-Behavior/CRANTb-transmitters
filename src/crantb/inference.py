@@ -1,8 +1,9 @@
 import pandas as pd
 from pathlib import Path
 import logging
-import tqdm
+from tqdm import tqdm
 import torch
+import numpy as np
 
 
 def get_epoch_metrics(
@@ -31,25 +32,16 @@ def get_epoch_metrics(
 
 def run_inference(model, dataloader, output, config):
     model.eval()
-    with open(output, "w") as f:
-        # Prepare the output file
-        f.write(
-            "x,y,z,"
-            + ",".join(config.gt.neurotransmitters)
-            + ",predicted_neurotransmitter\n"
-        )
-        # Run inference and save the predictions
-        for batch, locations in tqdm(dataloader, total=len(dataloader)):
-            with torch.no_grad():
-                outputs = model(batch)
-                probabilities = torch.nn.functional.softmax(outputs, dim=-1)
-                predictions = probabilities.argmax(dim=-1)
-
-                # Write the predictions to the file
-                for i in range(len(locations)):
-                    line = (
-                        f"{locations[i]['x']},{locations[i]['y']},{locations[i]['z']},"
-                    )
-                    line += ",".join(map(str, probabilities[i].cpu().numpy())) + ","
-                    line += config.gt.neurotransmitters[predictions[i].item()] + "\n"
-                    f.write(line)
+    all_predictions = []
+    all_locations = []
+    # Run inference and save the predictions
+    for batch, locations in tqdm(dataloader, total=len(dataloader)):
+        with torch.no_grad():
+            outputs = model(batch)
+            probabilities = torch.nn.functional.softmax(outputs, dim=-1)
+        all_predictions.extend(probabilities.cpu().numpy())
+        all_locations.extend(locations.cpu().numpy())
+    results = pd.DataFrame(all_predictions, columns=config.gt.neurotransmitters)
+    results[["x", "y", "z"]] = all_locations
+    # Save to output feather file
+    results.to_feather(output)

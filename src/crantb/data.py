@@ -144,6 +144,6 @@ class CloudVolumeDataset(Dataset):
 
         if self.inference:
             # For inference, we return the volume and the position
-            return cropped_volume, (x, y, z)
+            return cropped_volume, loc
 
         return cropped_volume, self.targets[idx]

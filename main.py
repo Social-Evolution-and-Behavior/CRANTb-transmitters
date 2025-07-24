@@ -161,7 +161,9 @@ def train(
 
     # Load the latest checkpoint and
     # resume training.
-    model, optimizer, start_epoch = load_checkpoint(model, optimizer, config.train.base)
+    model, optimizer, start_epoch = load_checkpoint(
+        config.train.base, model, optimizer=optimizer
+    )
 
     # Prepare model and optimizer with accelerator
     model, optimizer, dataloader, val_dataloader = accelerator.prepare(
@@ -282,7 +284,7 @@ def inference(
         epoch=epoch,
         metric=metric,
     )
-    model, _, _ = load_checkpoint(model, None, config.train.base, epoch=epoch)
+    model, _, _ = load_checkpoint(config.train.base, model, epoch=epoch)
     # Prepare the model and data with the accelerator
     model, dataloader = accelerator.prepare(model, dataloader)
     # Run inference
