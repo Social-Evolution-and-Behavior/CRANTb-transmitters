@@ -98,7 +98,7 @@ def save_checkpoint(model, optimizer, epoch, config):
     )
 
 
-def load_checkpoint(model, optimizer, base_directory):
+def load_checkpoint(base_directory, model=None, optimizer=None, epoch=None):
     """
     Find and load the latest checkpoint.
 
@@ -112,16 +112,25 @@ def load_checkpoint(model, optimizer, base_directory):
     if not checkpoints:
         return model, optimizer, 0  # No checkpoint found, return model and epoch 0
 
-    # Sort checkpoints by epoch number
-    checkpoints.sort(key=lambda x: int(x.stem.split("_")[-1]))
-    latest_checkpoint = checkpoints[-1]
+    if epoch is not None:
+        # If a specific epoch is requested, filter checkpoints
+        checkpoints = [cp for cp in checkpoints if int(cp.stem.split("_")[-1]) == epoch]
+        if not checkpoints:
+            raise ValueError(f"No checkpoint found for epoch {epoch}")
+        chosen_checkpoint = checkpoints[0]
+    else:
+        # Sort checkpoints by epoch number
+        checkpoints.sort(key=lambda x: int(x.stem.split("_")[-1]))
+        chosen_checkpoint = checkpoints[-1]
 
     # Load the model state
-    checkpoint = torch.load(latest_checkpoint, map_location="cpu")
-    model.load_state_dict(checkpoint["model_state_dict"])
-    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-    epoch = int(latest_checkpoint.stem.split("_")[-1])  # Convert to zero-based index
-    logging.info(f"Loaded checkpoint from {latest_checkpoint} for epoch {epoch}")
+    checkpoint = torch.load(chosen_checkpoint, map_location="cpu")
+    if model:
+        model.load_state_dict(checkpoint["model_state_dict"])
+    if optimizer:
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    epoch = int(chosen_checkpoint.stem.split("_")[-1])
+    logging.info(f"Loaded checkpoint from {chosen_checkpoint} for epoch {epoch}")
     return model, optimizer, epoch
 
 

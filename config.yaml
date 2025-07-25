@@ -35,3 +35,6 @@ train:
 
 validate: 
   batch_size: 32
+
+inference: 
+  batch_size: 32

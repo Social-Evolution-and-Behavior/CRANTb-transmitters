@@ -1,8 +1,5 @@
 import cloudvolume
 import pandas as pd
-import numpy as np
-import torch
-from torch.utils.data import Dataset
 from monai.transforms import (
     Compose,
     EnsureChannelFirst,
@@ -12,6 +9,10 @@ from monai.transforms import (
     RandScaleIntensityFixedMean,
     RandShiftIntensity,
 )
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+from typing import Union
 
 
 def train_transform():
@@ -63,7 +64,7 @@ class CloudVolumeDataset(Dataset):
     def __init__(
         self,
         cloud_volume_path,
-        metadata_path,
+        metadata_dataframe: pd.DataFrame,
         classes=None,
         crop_size=(64, 64, 64),
         transform=None,
@@ -71,12 +72,52 @@ class CloudVolumeDataset(Dataset):
         use_https=True,
         parallel=True,
         progress=False,
+        inference=False,
+        sample_weights_column: str = None,
+        class_weights: Union[torch.Tensor, bool] = True,
     ):
+        """
+        Args:
+            cloud_volume_path (str): Path to the cloud volume.
+            metadata_dataframe (pd.DataFrame): DataFrame containing metadata with 'x', 'y', 'z' columns for locations.
+            classes (list, optional): List of class names. If None, will use all available classes in the metadata.
+            crop_size (tuple): Size of the crop around each location.
+            transform (callable, optional): Transform to apply to the cropped volume.
+            cache (bool, optional): Whether to cache the cloud volume.
+            use_https (bool, optional): Whether to use HTTPS for the cloud volume.
+            parallel (bool, optional): Whether to use parallel loading for data loading.
+            progress (bool, optional): Whether to show progress for data loading.
+            inference (bool): If True, the dataset is used for inference and does not require targets
+            sample_weights_column (str, optional): Column name in metadata for sample weights.
+            class_weights (Any[torch.Tensor, None, bool], optional): Precomputed class weights as a torch.Tensor,
+                False to disable class weights, or True to compute class weights from targets.
+                Defaults to True, which computes class weights from targets.
+        """
         super().__init__()
+        self.inference = inference
         self.locations, self.targets, self.class_names = self._read_metadata(
-            metadata_path, classes
+            metadata_dataframe, classes
         )
-        self.weights = compute_class_weights(self.targets, len(self.class_names))
+        if class_weights is True:
+            # Compute class weights from targets
+            self.class_weights = compute_class_weights(
+                self.targets, len(self.class_names)
+            )
+        elif isinstance(class_weights, torch.Tensor):
+            # Use provided class weights
+            self.class_weights = class_weights
+        elif class_weights is False:
+            # Disable class weights --> set them all to one
+            self.class_weights = torch.ones(len(self.class_names), dtype=torch.float32)
+        if sample_weights_column:
+            if sample_weights_column not in metadata_dataframe.columns:
+                raise ValueError(
+                    f"Column '{sample_weights_column}' not found in metadata DataFrame."
+                )
+            self.sample_weights = metadata_dataframe[sample_weights_column].values
+        else:
+            # Sample weights for each location, if provided, else set to ones
+            self.sample_weights = torch.ones(len(self.locations), dtype=torch.float32)
         self.crop_size = crop_size  # Size around each location to crop
         self.transform = transform
         # Setup for the cloud volume
@@ -89,12 +130,22 @@ class CloudVolumeDataset(Dataset):
             progress=progress,
         )
 
-    def _read_metadata(self, metadata_path, classes=None):
+    def _read_metadata(self, metadata, classes=None):
         """
         Reads metadata from a Feather file and extracts locations and classes.
         """
-        metadata = pd.read_feather(metadata_path)
         locations = metadata[["x", "y", "z"]].values
+        if self.inference:
+            try:
+                class_names = {i: name for i, name in enumerate(sorted(classes))}
+            except TypeError:
+                # Classes need to be provided in inference mode
+                raise ValueError(
+                    "Classes must be provided in inference mode. "
+                    "Please provide a list of class names."
+                )
+            # For inference, we only need the locations
+            return locations, None, class_names
         # Get all available class names from the metadata column, even if not present in this split
         available_classes = (
             metadata["neurotransmitter"].astype("category").cat.categories
@@ -133,5 +184,9 @@ class CloudVolumeDataset(Dataset):
 
         if self.transform:
             cropped_volume = self.transform(cropped_volume)
+
+        if self.inference:
+            # For inference, we return the volume and the position
+            return cropped_volume, loc
 
         return cropped_volume, self.targets[idx]

@@ -62,3 +62,35 @@ pixi run train --cfg config.yaml --epochs 10
 
 Additionally, the training script will resume runs by default: it will load the latest checkpoint and train from there until the `epochs` value that you have defined. 
 If you would prefer to start training from scratch for this configuration, set `--restart`.
+
+### Sampling and class weights
+
+Two types of weighting are possible with the code as written: changing how the synapses are sampled and changing how much each class contributes to the loss. Note that weights are *only* used for training.
+
+Both can be set under `train` in the configuration. 
+The `class_weights` should be set as a list which should be the same length as the number of neurortansmitters. 
+Sample weights are set by providing a `sample_weights_column` which should point to a column of the feather file where this information is provided.
+
+## Report results
+The `report` task shows the metrics for a given epoch. By default it will show the epoch with the best `balanced_accuracy`. 
+You can, however, choose a different metric to select the best epoch with `--metric`. 
+Alternatively, you can choose a specific epoch to plot with `--epoch`. 
+
+Example to report the best epoch with regards to validation loss: 
+```
+pixi run report --cfg config.yaml --metric val_loss
+```
+
+## Running inference
+The `infer` task runs inference on a provided set of locations (must be a feather file).
+By default, it will use the model with the best `balanced_accuracy` to run inference. 
+We recommend giving an output location for where to save your predictions. 
+
+An example to run inference on the locations in `source_locations.feather` and save the results in `predictions.feather`
+```
+pixi run infer --cfg config.yaml --output experiment_directory/predictions.feather experiment_directory/source_locations.feather,
+```
+
+You can also select a sub-range on which to run, for example to run inference as an array job on a cluster. 
+An example SLURM cluster job is provided in [inference.sh](inference.sh). Make sure to edit it to your specific needs.
+If you use this, you can use the `merge` task to put your results together into a single feather file after your distributed inference has stopped running.
