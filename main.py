@@ -23,8 +23,9 @@ from omegaconf import OmegaConf
 import pandas as pd
 from pathlib import Path
 import torch
+from torch.utils.data import WeightedRandomSampler
 import typer
-from typing import Optional, Annotated
+from typing import Optional, Annotated, Union
 
 
 # The CLI
@@ -40,7 +41,11 @@ def load_config(cfg: str) -> OmegaConf:
 
 
 def load_dataset(
-    cfg, metadata_df: pd.DataFrame = None, split: str = "test", inference=False
+    cfg,
+    metadata_df: pd.DataFrame = None,
+    split: str = "test",
+    inference=False,
+    class_weights: Union[torch.Tensor, bool] = True,
 ) -> CloudVolumeDataset:
     """
     Load the dataset based on the configuration.
@@ -56,7 +61,9 @@ def load_dataset(
     if metadata_df is None:
         metadata_df = pd.read_feather(cfg.gt[split])
     transform = train_transform() if split == "train" else test_transform()
-
+    # No class weights for inference
+    if inference:
+        class_weights = False
     return CloudVolumeDataset(
         cloud_volume_path=cfg.data.container,
         metadata_dataframe=metadata_df,
@@ -68,6 +75,7 @@ def load_dataset(
         cache=cfg.data.cache,
         progress=cfg.data.progress,
         inference=inference,
+        class_weights=class_weights,
     )
 
 
@@ -125,18 +133,20 @@ def train(
     dataset = load_dataset(config, split="train")
     val_dataset = load_dataset(config, split="val")
     # Dataloaders
+    # Use the sample weights from the dataset to get a WeightedRandomSampler
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=config.train.batch_size,
-        shuffle=True,
-        num_workers=0,
+        sampler=WeightedRandomSampler(
+            dataset.sample_weights if dataset.sample_weights is not None else None,
+            num_samples=len(dataset),
+        ),
         pin_memory=True,
     )
     val_dataloader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=config.validate.batch_size,
         shuffle=False,
-        num_workers=0,
         pin_memory=True,
     )
     # Initialize model, optimizer
@@ -171,7 +181,7 @@ def train(
     )
 
     # Losses
-    class_weights = dataset.weights.to(accelerator.device)
+    class_weights = dataset.class_weights.to(accelerator.device)
     loss_fn = torch.nn.CrossEntropyLoss(
         weight=class_weights
     )  # Use class weights to account for class imbalance
