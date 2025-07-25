@@ -46,6 +46,7 @@ def load_dataset(
     split: str = "test",
     inference=False,
     class_weights: Union[torch.Tensor, bool] = True,
+    sample_weights_column: str = None,
 ) -> CloudVolumeDataset:
     """
     Load the dataset based on the configuration.
@@ -57,6 +58,11 @@ def load_dataset(
     metadata_df: Dataframe for locations to load.
         This is optional. If it is not provided it will be read from the configuration file using the "split"
     split: Which data split to use. This is used to load data and select the right dataframe.
+    class_weights: Precomputed class weights as a torch.Tensor, False to disable class weights, or True to compute class weights from targets.
+        Defaults to True, which computes class weights from targets to counter class imbalance.
+    sample_weights_column: Column name in metadata for sample weights: this determines how likely each sample is to be selected.
+        Defaults to None, which means no sample weights are used and all synapses are equally likely.
+        This can also be used to counter class imbalance.
     """
     if metadata_df is None:
         metadata_df = pd.read_feather(cfg.gt[split])
@@ -76,6 +82,7 @@ def load_dataset(
         progress=cfg.data.progress,
         inference=inference,
         class_weights=class_weights,
+        sample_weights_column=sample_weights_column,
     )
 
 
@@ -130,7 +137,12 @@ def train(
     # Initialize accelerator
     set_seed(config.seed)
     accelerator = Accelerator()
-    dataset = load_dataset(config, split="train")
+    dataset = load_dataset(
+        config,
+        split="train",
+        class_weights=config.train.get("class_weights", True),
+        sample_weights_column=config.data.get("sample_weights_column", None),
+    )
     val_dataset = load_dataset(config, split="val")
     # Dataloaders
     # Use the sample weights from the dataset to get a WeightedRandomSampler
