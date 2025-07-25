@@ -23,8 +23,9 @@ from omegaconf import OmegaConf
 import pandas as pd
 from pathlib import Path
 import torch
+from torch.utils.data import WeightedRandomSampler
 import typer
-from typing import Optional, Annotated
+from typing import Optional, Annotated, Union
 
 
 # The CLI
@@ -40,7 +41,12 @@ def load_config(cfg: str) -> OmegaConf:
 
 
 def load_dataset(
-    cfg, metadata_df: pd.DataFrame = None, split: str = "test", inference=False
+    cfg,
+    metadata_df: pd.DataFrame = None,
+    split: str = "test",
+    inference=False,
+    class_weights: Union[torch.Tensor, bool] = True,
+    sample_weights_column: str = None,
 ) -> CloudVolumeDataset:
     """
     Load the dataset based on the configuration.
@@ -52,11 +58,18 @@ def load_dataset(
     metadata_df: Dataframe for locations to load.
         This is optional. If it is not provided it will be read from the configuration file using the "split"
     split: Which data split to use. This is used to load data and select the right dataframe.
+    class_weights: Precomputed class weights as a torch.Tensor, False to disable class weights, or True to compute class weights from targets.
+        Defaults to True, which computes class weights from targets to counter class imbalance.
+    sample_weights_column: Column name in metadata for sample weights: this determines how likely each sample is to be selected.
+        Defaults to None, which means no sample weights are used and all synapses are equally likely.
+        This can also be used to counter class imbalance.
     """
     if metadata_df is None:
         metadata_df = pd.read_feather(cfg.gt[split])
     transform = train_transform() if split == "train" else test_transform()
-
+    # No class weights for inference
+    if inference:
+        class_weights = False
     return CloudVolumeDataset(
         cloud_volume_path=cfg.data.container,
         metadata_dataframe=metadata_df,
@@ -68,6 +81,8 @@ def load_dataset(
         cache=cfg.data.cache,
         progress=cfg.data.progress,
         inference=inference,
+        class_weights=class_weights,
+        sample_weights_column=sample_weights_column,
     )
 
 
@@ -122,21 +137,28 @@ def train(
     # Initialize accelerator
     set_seed(config.seed)
     accelerator = Accelerator()
-    dataset = load_dataset(config, split="train")
+    dataset = load_dataset(
+        config,
+        split="train",
+        class_weights=config.train.get("class_weights", True),
+        sample_weights_column=config.data.get("sample_weights_column", None),
+    )
     val_dataset = load_dataset(config, split="val")
     # Dataloaders
+    # Use the sample weights from the dataset to get a WeightedRandomSampler
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=config.train.batch_size,
-        shuffle=True,
-        num_workers=0,
+        sampler=WeightedRandomSampler(
+            dataset.sample_weights if dataset.sample_weights is not None else None,
+            num_samples=len(dataset),
+        ),
         pin_memory=True,
     )
     val_dataloader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=config.validate.batch_size,
         shuffle=False,
-        num_workers=0,
         pin_memory=True,
     )
     # Initialize model, optimizer
@@ -171,7 +193,7 @@ def train(
     )
 
     # Losses
-    class_weights = dataset.weights.to(accelerator.device)
+    class_weights = dataset.class_weights.to(accelerator.device)
     loss_fn = torch.nn.CrossEntropyLoss(
         weight=class_weights
     )  # Use class weights to account for class imbalance
