@@ -11,8 +11,8 @@ import os
 
 
 def main(
-    locations_file: str = "/ru-auth/local/home/jlee11/scratch/nt_predictions/250721_pseudoGT_neurotransmitter_noduplicates.feather",
-    cache_path: str = "/ru-auth/local/home/jlee11/scratch/nt_predictions/caches",
+    locations_file: str = "",
+    cache_path: str = "",
     start_index: int = 0,
     end_index: Optional[int] = None,
     dx: int = 80,
@@ -35,8 +35,8 @@ def main(
     """
     df = pd.read_feather(locations_file)
     # subsetting
-    df = df.sample(n=10000, random_state=20250724)
-    df.to_feather(f"imported_synapses_{time.strftime("%Y%m%d")}.feather")
+    df = df.sample(n=10000, random_state=202507819)
+    df.to_feather(f"imported_synapses_{time.strftime('%Y%m%d')}.feather")
 
     locations = df[["x", "y", "z"]].values
     # Only get the locations between start_index and end_index
@@ -44,17 +44,15 @@ def main(
         end_index = len(locations)
     locations = locations[start_index:end_index]
 
-    os.environ["CLOUDFILES_DIR"] = (
-        "/ru-auth/local/home/jlee11/scratch/nt_predictions/cloudfiles"
-    )
     cv = CloudVolume(
         cloudpath=cloud_volume_path,
         use_https=True,
         cache=cache_path,
         progress=False,
         parallel=True,
+        fill_missing=True,
     )
-
+    
     # tqdm option
 
     # for i, (x, y, z) in tqdm(
@@ -69,11 +67,17 @@ def main(
     # every 50 synapses for slurm
     total = len(locations)
     start_loop_time = perf_counter()
+
+        # Calculate the crop bounds
+    half_dx = dx //2
+    half_dy = dy //2
+    half_dz = dz //2
+
     for i, (x, y, z) in enumerate(locations):
         # Get the data from the cloud volume
-        data = cv[x : x + dx, y : y + dy, z : z + dz]
+        data = cv[x - half_dx : x + half_dx, y - half_dy: y + half_dy, z - half_dz: z + half_dz]
         # This should cache the data locally
-        if i == 1 or i % 50 == 0 and i > 0:
+        if i == 1 or i % 100 == 0 and i > 0:
             elapsed = perf_counter() - start_loop_time
             rate = elapsed / i
             remaining = rate * (total - i)
