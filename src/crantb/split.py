@@ -8,7 +8,7 @@ import yaml
 def split_data(
     base: str = "",
     val_size: float = 0.05,
-    random_state: int = 42,
+    random_state: int = 12345,
     body_id: str = "neuron_id",
     nt_name: str = "neurotransmitter",
     neurotransmitters: list = None,
