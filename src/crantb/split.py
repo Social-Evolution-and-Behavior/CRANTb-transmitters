@@ -6,7 +6,7 @@ import yaml
 
 
 def split_data(
-    base: str = "",
+    base: str = "/ru-auth/local/home/jlee11/scratch/nt_predictions/imported_synapses_20250723.feather",
     val_size: float = 0.05,
     random_state: int = 12345,
     body_id: str = "neuron_id",
